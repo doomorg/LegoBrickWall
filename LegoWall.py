@@ -2,14 +2,52 @@
 """
 Lego Brick Wall Builder Simulation
 
+A flexible and extensible library for calculating valid Lego brick wall configurations.
+This simulation uses dynamic programming and bit manipulation for efficient computation
+of wall patterns that avoid vertical crack alignment.
+
+Key Features:
+- Dynamic programming optimization for performance
+- Bit manipulation for pattern matching
+- Extensible brick catalog system
+- Cost optimization capabilities
+- Color and dimension filtering
+- Comprehensive validation
+
 """
 
 import argparse
 import sys
 import logging
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional, Set
 from dataclasses import dataclass
 import time
+import re
+
+# Default brick configurations - can be easily modified or extended
+DEFAULT_BRICK_CONFIGS = [
+    {
+        "catalog_number": "ABCD1234",
+        "width": 2,
+        "height": 1,
+        "price": 0.49,
+        "color": "Yellow"
+    },
+    {
+        "catalog_number": "WXYZ1234", 
+        "width": 3,
+        "height": 1,
+        "price": 0.55,
+        "color": "Blue"
+    }
+]
+
+# Validation patterns
+CATALOG_NUMBER_PATTERN = re.compile(r'^[A-Z0-9]{4,12}$')
+VALID_COLORS = {
+    'Red', 'Blue', 'Yellow', 'Green', 'Orange', 'Purple', 'Pink', 
+    'Brown', 'Black', 'White', 'Gray', 'Light Blue', 'Dark Green'
+}
 
 
 @dataclass(frozen=True)
@@ -23,10 +61,29 @@ class Brick:
     
     def __post_init__(self):
         """Validate brick properties."""
+        
+        # Validate width and height
         if self.width <= 0 or self.height <= 0:
             raise ValueError(f"Brick dimensions must be positive: width={self.width}, height={self.height}")
+        
+        # Validate price
         if self.price < 0:
             raise ValueError(f"Brick price cannot be negative: price={self.price}")
+        
+        # Validate catalog number
+        if not CATALOG_NUMBER_PATTERN.match(self.catalog_number):
+            raise ValueError(
+                f"Invalid catalog number format '{self.catalog_number}'. "
+                f"Must be 4-12 alphanumeric characters (A-Z, 0-9)"
+            )
+            
+        # Validate colour
+        if self.color not in VALID_COLORS:
+            raise ValueError(
+                f"Invalid color '{self.color}'. "
+                f"Valid colors: {', '.join(sorted(VALID_COLORS))}"
+            )
+        
 
 
 class BrickCatalog:
@@ -38,29 +95,36 @@ class BrickCatalog:
     
     def _initialize_default_bricks(self):
         """Initialize with default Lego brick types."""
-        self.add_brick(Brick("ABCD1234", 2, 1, 0.49, "Yellow"))
-        self.add_brick(Brick("WXYZ1234", 3, 1, 0.55, "Blue"))
+        
+        for config in DEFAULT_BRICK_CONFIGS:
+            brick = Brick(**config)
+            self.add_brick(brick)
     
     def add_brick(self, brick: Brick):
         """Add a brick to the catalog."""
+        
         self._bricks[brick.catalog_number] = brick
     
     def get_brick(self, catalog_number: str) -> Brick:
         """Get a brick by catalog number."""
+        
         if catalog_number not in self._bricks:
             raise ValueError(f"Brick not found: {catalog_number}")
         return self._bricks[catalog_number]
     
     def get_all_bricks(self) -> List[Brick]:
         """Get all available bricks."""
+        
         return list(self._bricks.values())
     
     def get_bricks_by_height(self, height: int) -> List[Brick]:
         """Get all bricks with specified height."""
+        
         return [brick for brick in self._bricks.values() if brick.height == height]
     
     def get_brick_widths(self, height: int = 1) -> List[int]:
         """Get sorted list of brick widths for given height."""
+        
         return sorted([brick.width for brick in self.get_bricks_by_height(height)])
 
 
@@ -69,6 +133,11 @@ class WallGenerator:
     Wall Generator using dynamic programming and bit manipulation:
     - Bit manipulation for pattern matching
     - Cached computations for efficiency
+    
+    The algorithm works by:
+    - Generating all possible row configurations for the wall width
+    - Converting each configuration to a bit pattern representing crack positions
+    - Using DP to count valid combinations where no cracks align vertically
     """
     
     def __init__(self, brick_catalog: BrickCatalog):
@@ -81,7 +150,19 @@ class WallGenerator:
         self._compatibility_cache: Dict[Tuple[int, int], List[List[bool]]] = {}
         
     def _generate_row_configurations(self, width: int) -> List[List[int]]:
-        """Generate all possible row configurations using dynamic programming."""
+        """
+        Generate all possible row configurations using dynamic programming.
+        
+        This method finds all ways to fill a row of given width using available
+        brick widths. It uses backtracking to explore all valid combinations.
+        
+        Args:
+            width: The target width to fill
+            
+        Returns:
+            List of configurations, where each configuration is a list of brick widths
+        """
+        
         if width in self._row_configs_cache:
             return self._row_configs_cache[width]
         
@@ -89,10 +170,19 @@ class WallGenerator:
         configurations = []
         
         def backtrack(remaining_width: int, current_config: List[int]):
+            """
+            Recursive backtracking to find all valid configurations.
+            
+            Args:
+                remaining_width: How much width is left to fill
+                current_config: Current partial configuration being built
+            """
+            
             if remaining_width == 0:
                 configurations.append(current_config.copy())
                 return
             
+            # Try each available brick width
             for brick_width in brick_widths:
                 if remaining_width >= brick_width:
                     current_config.append(brick_width)
@@ -104,7 +194,20 @@ class WallGenerator:
         return configurations
     
     def _config_to_bit_pattern(self, config: List[int], width: int) -> int:
-        """Convert row configuration to bit pattern representing crack positions."""
+        """
+        Convert row configuration to bit pattern representing crack positions.
+        
+        Each bit position represents a potential crack location. A bit is set to 1
+        if there's a crack at that position.
+        
+        Args:
+            config: List of brick widths in the row
+            width: Total width of the row
+            
+        Returns:
+            Integer where each bit represents a crack position
+        """
+        
         bit_pattern = 0
         position = 0
         
@@ -117,6 +220,7 @@ class WallGenerator:
     
     def _get_bit_patterns(self, width: int) -> List[int]:
         """Get bit patterns for all row configurations."""
+        
         if width in self._bit_patterns_cache:
             return self._bit_patterns_cache[width]
         
@@ -127,7 +231,27 @@ class WallGenerator:
         return bit_patterns
     
     def _count_walls_dp_approach(self, width: int, height: int) -> int:
-        """Use dynamic programming and recursion with bit manipulation."""
+        """
+        Core dynamic programming algorithm for counting valid walls.
+        
+        This method uses a recursive approach with memoization to count all
+        valid wall configurations. The key insight is that wall validity
+        depends only on adjacent rows, allowing for optimal substructure.
+        
+        Args:
+            width: Wall width in stud units
+            height: Wall height in rows
+            
+        Returns:
+            Total number of valid wall configurations
+            
+        Algorithm:
+            1. Generate all possible bit patterns for rows of given width
+            2. Use recursive DP with state (remaining_height, previous_pattern)
+            3. For each state, try all compatible current patterns
+            4. Two patterns are compatible if they have no overlapping cracks
+            5. Base case: height=0 returns 1 (one way to build empty wall)
+        """
         
         bit_patterns = self._get_bit_patterns(width)
         
@@ -135,19 +259,30 @@ class WallGenerator:
         memo = {}
         
         def count_recursive(remaining_height: int, prev_pattern: int) -> int:
+            """
+            Recursive helper function with memoization.
+            
+            Args:
+                remaining_height: Number of rows left to place
+                prev_pattern: Bit pattern of the previously placed row
+                
+            Returns:
+                Number of valid ways to complete the wall from this state
+            """
+            
             if remaining_height == 0:
                 return 1
             
-            if (remaining_height, prev_pattern) in memo:
-                return memo[(remaining_height, prev_pattern)]
+            state_key = (remaining_height, prev_pattern)
+            if state_key in memo:
+                return memo[state_key]
             
             total = 0
             for current_pattern in bit_patterns:
-                # Check compatibility using bit operations
                 if (prev_pattern & current_pattern) == 0:
                     total += count_recursive(remaining_height - 1, current_pattern)
             
-            memo[(remaining_height, prev_pattern)] = total
+            memo[state_key] = total
             return total
         
         # Start with all possible first rows
@@ -171,10 +306,7 @@ class WallGenerator:
         self.logger.info(f"Calculating valid walls for {width}x{height}")
         start_time = time.time()
         
-        # Algorithm selection based on problem characteristics
-        brick_widths = self.brick_catalog.get_brick_widths(height=1)
-        
-        # try:
+        # Execute optimized algorithm
         result = self._count_walls_dp_approach(width, height)
         
         end_time = time.time()
@@ -183,13 +315,36 @@ class WallGenerator:
         return result
     
     def generate_wall_configurations(self, width: int, height: int) -> List[List[List[int]]]:
-        """Generate all valid wall configurations (rows of brick widths) with no vertical cracks aligned."""
+        """
+        Generate all valid wall configurations explicitly.
+        
+        This method generates the actual wall configurations rather than just
+        counting them. Useful for small problems where we want to visualize
+        all possible solutions.
+        
+        Returns:
+            List of walls, where each wall is a list of rows, and each row
+            is a list of brick widths.
+            
+        Note: This method has exponential complexity and should only be used
+        for small wall dimensions to avoid memory/performance issues.
+        """
+        
         row_configs = self._generate_row_configurations(width)
         bit_patterns = [self._config_to_bit_pattern(config, width) for config in row_configs]
         config_bit_pairs = list(zip(row_configs, bit_patterns))
         valid_walls = []
 
         def backtrack(level: int, prev_bit: int, current_wall: List[List[int]]):
+            """
+            Recursive backtracking to generate all valid wall configurations.
+            
+            Args:
+                level: Current row being filled (0 to height-1)
+                prev_bit: Bit pattern of the previous row
+                current_wall: Wall configuration being built
+            """
+            
             if level == height:
                 valid_walls.append([row.copy() for row in current_wall])
                 return
@@ -204,18 +359,32 @@ class WallGenerator:
 
 
 class BrickBuilderApp:
-    """Main application class for the brick builder simulation."""
+    """
+    Main application class providing a comprehensive interface to the brick builder simulation.
+    
+    This class orchestrates all components of the system and provides both programmatic
+    and command-line interfaces. It's designed to be easily extensible for future
+    enhancements like:
+    - Cost optimization algorithms
+    - Color pattern constraints  
+    - Advanced wall generation strategies
+    - Export capabilities for wall plans
+    """
     
     def __init__(self):
+        """Initialize the Brick Builder application."""
+        
         self.brick_catalog = BrickCatalog()
         self.wall_generator = WallGenerator(self.brick_catalog)
         self.logger = self._setup_logging()
     
     def _setup_logging(self) -> logging.Logger:
         """Setup logging configuration."""
+        
         logger = logging.getLogger(__name__)
         logger.setLevel(logging.INFO)
         
+        # Avoid duplicate handlers
         if not logger.handlers:
             handler = logging.StreamHandler(sys.stderr)
             formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -226,7 +395,7 @@ class BrickBuilderApp:
     
     def run(self, wall_width: int, wall_height: int) -> int:
         """
-        Run the optimized brick builder simulation.
+        Run the brick builder simulation.
         
         Args:
             wall_width: Width of the wall
@@ -249,6 +418,8 @@ class BrickBuilderApp:
             result = self.wall_generator.count_valid_walls(wall_width, wall_height)
             
             self.logger.info(f"Total unique valid wall configurations: {result}")
+            
+            # If result is small, generate and display wall configurations
             if result < 10:
               walls = self.wall_generator.generate_wall_configurations(wall_width, wall_height)
               print("\n--- Wall Configurations (brick widths per row) ---")
