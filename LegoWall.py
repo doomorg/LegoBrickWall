@@ -142,6 +142,7 @@ class WallGenerator:
     
     def __init__(self, brick_catalog: BrickCatalog):
         self.brick_catalog = brick_catalog
+        self._price_lookup: Dict[int, float] = self._precompute_cheapest_prices()
         self.logger = logging.getLogger(__name__)
         
         # Caches for performance
@@ -356,7 +357,29 @@ class WallGenerator:
 
         backtrack(0, 0, [])
         return valid_walls
+    
+    def _precompute_cheapest_prices(self) -> Dict[int, float]:
+        """Precompute the cheapest price for each brick width."""
+        lookup = {}
+        for brick in self.brick_catalog.get_bricks_by_height(1):
+            if brick.width not in lookup or brick.price < lookup[brick.width]:
+                lookup[brick.width] = brick.price
+        return lookup
 
+    def compute_wall_cost(self, wall: List[List[int]]) -> float:
+        """Compute total cost of a given wall configuration using cached prices."""
+        total = 0.0
+        for row in wall:
+            for width in row:
+                if width not in self._price_lookup:
+                    raise ValueError(f"No matching brick of width {width}")
+                total += self._price_lookup[width]
+        return total
+
+    def generate_wall_configurations_with_costs(self, width: int, height: int) -> List[Tuple[List[List[int]], float]]:
+        """Return all valid wall configurations with their total cost."""
+        walls = self.generate_wall_configurations(width, height)
+        return [(w, self.compute_wall_cost(w)) for w in walls]
 
 class BrickBuilderApp:
     """
@@ -392,8 +415,29 @@ class BrickBuilderApp:
             logger.addHandler(handler)
         
         return logger
+      
+    def run_cheapest_wall(self, width: int, height: int):
+        """
+        Finds the cheapest wall configuration if specified. Takes a significant amount of time for large walls.
+        Use only for walls with less than 1,000,000 configurations.
+        """
+      
+        self.logger.info("Finding the cheapest valid wall configuration...")
+        walls_with_costs = self.wall_generator.generate_wall_configurations_with_costs(width, height)
+        if not walls_with_costs:
+            self.logger.warning("No valid wall configurations found.")
+            return 0.0
+
+        cheapest_wall, min_cost = min(walls_with_costs, key=lambda pair: pair[1])
+
+        print("\n--- Cheapest Wall Configuration ---")
+        for row in cheapest_wall:
+            line = '|'.join(['■' * w for w in row])
+            print(line)
+        print(f"Total cost: ${min_cost:.2f}")
+        return min_cost
     
-    def run(self, wall_width: int, wall_height: int) -> int:
+    def run(self, wall_width: int, wall_height: int, cheapest_mode: bool = False) -> int:
         """
         Run the brick builder simulation.
         
@@ -407,6 +451,9 @@ class BrickBuilderApp:
         try:
             self.logger.info(f"Starting optimized brick builder for {wall_width}x{wall_height} wall")
             
+            if cheapest_mode:
+                return self.run_cheapest_wall(wall_width, wall_height)
+  
             # Display available bricks
             bricks = self.brick_catalog.get_all_bricks()
             self.logger.info(f"Available bricks: {len(bricks)}")
@@ -457,6 +504,12 @@ def main():
     )
     
     parser.add_argument(
+        '--cheapest',
+        action='store_true',
+        help='Find and print the cheapest valid wall configuration'
+    )
+    
+    parser.add_argument(
         '-v', '--verbose',
         action='store_true',
         help='Enable verbose logging'
@@ -475,8 +528,9 @@ def main():
     
     try:
         app = BrickBuilderApp()
-        result = app.run(args.wall_width, args.wall_height)
-        print(result)
+        result = app.run(args.wall_width, args.wall_height, cheapest_mode=args.cheapest)
+        if not args.cheapest:
+          print(result)
         
     except KeyboardInterrupt:
         print("\nOperation cancelled by user", file=sys.stderr)
