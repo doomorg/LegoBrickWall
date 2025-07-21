@@ -116,16 +116,22 @@ class BrickCatalog:
         """Get all available bricks."""
         
         return list(self._bricks.values())
+      
+    def get_bricks_by_color(self, allowed_colors: Optional[Set[str]] = None) -> List[Brick]:
+        """Get bricks filtered by allowed colors."""
+        if allowed_colors is None:
+            return self.get_all_bricks()
+        return [brick for brick in self._bricks.values() if brick.color in allowed_colors]
     
-    def get_bricks_by_height(self, height: int) -> List[Brick]:
-        """Get all bricks with specified height."""
-        
-        return [brick for brick in self._bricks.values() if brick.height == height]
+    def get_bricks_by_height(self, height: int, allowed_colors: Optional[Set[str]] = None) -> List[Brick]:
+        """Get all bricks with specified height and allowed colors."""
+        return [brick for brick in self.get_bricks_by_color(allowed_colors) if brick.height == height]
     
-    def get_brick_widths(self, height: int = 1) -> List[int]:
-        """Get sorted list of brick widths for given height."""
-        
-        return sorted([brick.width for brick in self.get_bricks_by_height(height)])
+    def get_brick_widths(self, height: int = 1, allowed_colors: Optional[Set[str]] = None) -> List[int]:
+        """Get sorted list of brick widths for given height and allowed colors."""
+        return sorted([brick.width for brick in self.get_bricks_by_height(height, allowed_colors)])
+      
+    
 
 
 class WallGenerator:
@@ -416,28 +422,26 @@ class BrickBuilderApp:
         
         return logger
       
-    def run_cheapest_wall(self, width: int, height: int):
-        """
-        Finds the cheapest wall configuration if specified. Takes a significant amount of time for large walls.
-        Use only for walls with less than 1,000,000 configurations.
-        """
-      
-        self.logger.info("Finding the cheapest valid wall configuration...")
+    def run_cheapest_wall(self, width: int, height: int, allowed_colors: Optional[Set[str]] = None):
+        self.logger.info("Finding cheapest configuration")
+        self.logger.info(f"Allowed colors: {allowed_colors if allowed_colors else 'All'}")
+        
+        self.wall_generator.brick_catalog._bricks = {
+            k: b for k, b in self.wall_generator.brick_catalog._bricks.items() if allowed_colors is None or b.color in allowed_colors
+        }
+        self.wall_generator._price_lookup = self.wall_generator._precompute_cheapest_prices()
         walls_with_costs = self.wall_generator.generate_wall_configurations_with_costs(width, height)
         if not walls_with_costs:
-            self.logger.warning("No valid wall configurations found.")
+            print("No configurations found.")
             return 0.0
-
-        cheapest_wall, min_cost = min(walls_with_costs, key=lambda pair: pair[1])
-
+        wall, cost = min(walls_with_costs, key=lambda x: x[1])
         print("\n--- Cheapest Wall Configuration ---")
-        for row in cheapest_wall:
-            line = '|'.join(['■' * w for w in row])
-            print(line)
-        print(f"Total cost: ${min_cost:.2f}")
-        return min_cost
+        for row in wall:
+            print('|'.join(['■' * w for w in row]))
+        print(f"Total cost: ${cost:.2f}")
+        return cost
     
-    def run(self, wall_width: int, wall_height: int, cheapest_mode: bool = False) -> int:
+    def run(self, wall_width: int, wall_height: int, cheapest_mode: bool = False, color_filter: Optional[List[str]] = None) -> int:
         """
         Run the brick builder simulation.
         
@@ -450,9 +454,17 @@ class BrickBuilderApp:
         """
         try:
             self.logger.info(f"Starting optimized brick builder for {wall_width}x{wall_height} wall")
-            
+            allowed_colors = set(color_filter) if color_filter else None
+            self.wall_generator.brick_catalog._bricks = {
+                k: b for k, b in self.wall_generator.brick_catalog._bricks.items()
+                if allowed_colors is None or b.color in allowed_colors
+            }
+            self.wall_generator._row_configs_cache.clear()
+            self.wall_generator._bit_patterns_cache.clear()
+            self.wall_generator._price_lookup = self.wall_generator._precompute_cheapest_prices()
+            allowed_colors = set(color_filter) if color_filter else None
             if cheapest_mode:
-                return self.run_cheapest_wall(wall_width, wall_height)
+                return self.run_cheapest_wall(wall_width, wall_height, allowed_colors)
   
             # Display available bricks
             bricks = self.brick_catalog.get_all_bricks()
@@ -460,7 +472,10 @@ class BrickBuilderApp:
             for brick in bricks:
                 self.logger.info(f"  - {brick.color} ({brick.catalog_number}): "
                                f"{brick.width}x{brick.height} units, ${brick.price}")
-            
+            if len(bricks) == 0:
+                self.logger.warning("No bricks with specified colours available in the catalog.")
+                return 0
+              
             # Calculate unique wall configurations
             result = self.wall_generator.count_valid_walls(wall_width, wall_height)
             
@@ -510,6 +525,12 @@ def main():
     )
     
     parser.add_argument(
+        '--colors',
+        nargs='+',
+        help='Specify allowed brick colors (e.g., --colors Red Blue Yellow)'
+    )
+    
+    parser.add_argument(
         '-v', '--verbose',
         action='store_true',
         help='Enable verbose logging'
@@ -528,7 +549,7 @@ def main():
     
     try:
         app = BrickBuilderApp()
-        result = app.run(args.wall_width, args.wall_height, cheapest_mode=args.cheapest)
+        result = app.run(args.wall_width, args.wall_height, cheapest_mode=args.cheapest, color_filter=args.colors)
         if not args.cheapest:
           print(result)
         

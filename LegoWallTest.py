@@ -278,7 +278,6 @@ class TestCheapestWall(unittest.TestCase):
         # There are 8 valid configurations, we only check cost is positive
         self.assertAlmostEqual(cost, 5.32, places=2)
 
-
 class TestIntegration(unittest.TestCase):
     """Integration tests for the entire system."""
     
