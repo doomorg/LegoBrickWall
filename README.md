@@ -17,22 +17,18 @@ A flexible and extensible Python library for calculating valid Lego brick wall c
 
 # Clone the repository
 git clone git@github.com:doomorg/LegoBrickWall.git
-cd LegoBrickWall
-
-# No external dependencies required - uses only Python standard library
-python brick_builder.py --help
 
 # Basic Command Line Usage
-python brick_builder.py 6 3
+python3 LegoBrickWall.py 6 3
 
 # Calculate with verbose output
-python brick_builder.py 6 3 --verbose
+python3 LegoBrickWall.py 6 3 --verbose
 
 # Filter by colour
-python brick_builder.py 8 4 --colors Blue Yellow
+python3 LegoBrickWall.py 8 4 --colors Blue Yellow
 
 # Find cheapest wall configuration
-python brick_builder.py 10 5 --cheapest
+python3 LegoBrickWall.py 10 5 --cheapest
 
 # Extensions
 Possible extensions include:
