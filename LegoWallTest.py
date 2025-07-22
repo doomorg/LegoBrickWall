@@ -95,55 +95,6 @@ class TestBrickCatalog(unittest.TestCase):
         height_2_bricks = self.catalog.get_bricks_by_height(2)
         self.assertEqual(len(height_2_bricks), 0)
 
-
-# class TestWallConfiguration(unittest.TestCase):
-#     """Test cases for the WallConfiguration class."""
-    
-#     def setUp(self):
-#         """Set up test fixtures."""
-#         self.yellow_brick = Brick("ABCD1234", 2, 1, 0.49, "Yellow")
-#         self.blue_brick = Brick("WXYZ1234", 3, 1, 0.55, "Blue")
-    
-#     def test_wall_configuration_creation(self):
-#         """Test wall configuration creation."""
-#         # Create a 5-unit wide wall: [2-unit brick][3-unit brick]
-#         positions = [(0, self.yellow_brick), (2, self.blue_brick)]
-#         config = WallConfiguration(5, positions)
-        
-#         self.assertEqual(config.width, 5)
-#         self.assertEqual(len(config.brick_positions), 2)
-#         self.assertEqual(config.crack_positions, {2})  # Crack at position 2
-    
-#     def test_crack_positions_calculation(self):
-#         """Test crack positions calculation."""
-#         # Wall: [2][3][2] (width=7)
-#         positions = [(0, self.yellow_brick), (2, self.blue_brick), (5, self.yellow_brick)]
-#         config = WallConfiguration(7, positions)
-        
-#         # Cracks at positions 2 and 5
-#         self.assertEqual(config.crack_positions, {2, 5})
-    
-#     def test_valid_next_row(self):
-#         """Test validation of next row configuration."""
-#         # First row: [2][3] (crack at 2)
-#         row1 = WallConfiguration(5, [(0, self.yellow_brick), (2, self.blue_brick)])
-        
-#         # Second row: [3][2] (crack at 3) - should be valid
-#         row2 = WallConfiguration(5, [(0, self.blue_brick), (3, self.yellow_brick)])
-        
-#         self.assertTrue(row1.is_valid_next_row(row2))
-    
-#     def test_invalid_next_row(self):
-#         """Test invalid next row configuration."""
-#         # First row: [2][3] (crack at 2)
-#         row1 = WallConfiguration(5, [(0, self.yellow_brick), (2, self.blue_brick)])
-        
-#         # Second row: [2][3] (crack at 2) - should be invalid (same crack position)
-#         row2 = WallConfiguration(5, [(0, self.yellow_brick), (2, self.blue_brick)])
-        
-#         self.assertFalse(row1.is_valid_next_row(row2))
-
-
 class TestWallGenerator(unittest.TestCase):
     """Test cases for the WallGenerator class."""
     
