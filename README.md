@@ -17,7 +17,6 @@ A flexible and extensible Python library for calculating valid Lego brick wall c
 
 # Clone the repository
 git clone git@github.com:doomorg/LegoBrickWall.git
-cd LegoBrickWall
 
 # No external dependencies required - uses only Python standard library
 python brick_builder.py --help
