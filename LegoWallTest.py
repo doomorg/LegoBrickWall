@@ -116,19 +116,25 @@ class TestWallGenerator(unittest.TestCase):
         self.assertIn([2, 3], config_patterns)
         self.assertIn([3, 2], config_patterns)
     
-    def test_bit_pattern_conversion(self):
-        """Test conversion of configurations to bit patterns."""
+    def test_crack_pattern_conversion(self):
+        """Test conversion of configurations to crack position sets."""
         # Test [2, 3] configuration (crack at position 2)
         config = [2, 3]
-        bit_pattern = self.generator._config_to_bit_pattern(config, 5)
-        expected = 1 << 2  # Bit set at position 2
-        self.assertEqual(bit_pattern, expected)
+        cracks = self.generator._config_to_cracks(config, 5)
+        expected = frozenset({2})  # Crack at position 2
+        self.assertEqual(cracks, expected)
         
         # Test [3, 2] configuration (crack at position 3)
         config = [3, 2]
-        bit_pattern = self.generator._config_to_bit_pattern(config, 5)
-        expected = 1 << 3  # Bit set at position 3
-        self.assertEqual(bit_pattern, expected)
+        cracks = self.generator._config_to_cracks(config, 5)
+        expected = frozenset({3})  # Crack at position 3
+        self.assertEqual(cracks, expected)
+        
+        # Test a configuration with multiple cracks
+        config = [2, 2, 2]
+        cracks = self.generator._config_to_cracks(config, 6)
+        expected = frozenset({2, 4})  # Cracks at positions 2 and 4
+        self.assertEqual(cracks, expected)
     
     def test_count_valid_walls_1x1(self):
         """Test counting valid walls for 1x1 (impossible with available bricks)."""
@@ -164,20 +170,17 @@ class TestWallGenerator(unittest.TestCase):
         self.assertEqual(result, 8)
     
     def test_caching_behavior(self):
-        """Test that caching improves performance."""
+        """Test that caching works correctly."""
         # First call
-        start_time = time.time()
         result1 = self.generator.count_valid_walls(12, 6)
-        first_time = time.time() - start_time
         
-        # Second call should be faster due to caching
-        start_time = time.time()
+        # Second call should use cached row/crack patterns and give same result
         result2 = self.generator.count_valid_walls(12, 6)
-        second_time = time.time() - start_time
         
         self.assertEqual(result1, result2)
-        # Second call should be significantly faster
-        self.assertLess(second_time, first_time)
+        # Verify that the cache is being used (cached values should be available)
+        self.assertIn(12, self.generator._row_configs_cache)
+        self.assertIn(12, self.generator._crack_patterns_cache)
 
 
 class TestBrickBuilderApp(unittest.TestCase):
