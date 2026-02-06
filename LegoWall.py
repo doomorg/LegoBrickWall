@@ -429,7 +429,6 @@ class BrickBuilderApp:
             self.wall_generator._row_configs_cache.clear()
             self.wall_generator._row_data_cache.clear()
             self.wall_generator._price_lookup = self.wall_generator._precompute_cheapest_prices()
-            allowed_colors = set(color_filter) if color_filter else None
             if cheapest_mode:
                 return self.run_cheapest_wall(wall_width, wall_height, allowed_colors)
   

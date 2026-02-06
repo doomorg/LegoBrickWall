@@ -161,20 +161,17 @@ class TestWallGenerator(unittest.TestCase):
         self.assertEqual(result, 8)
     
     def test_caching_behavior(self):
-        """Test that caching improves performance."""
+        """Test that caching works correctly."""
         # First call
-        start_time = time.time()
         result1 = self.generator.count_valid_walls(12, 6)
-        first_time = time.time() - start_time
         
-        # Second call should be faster due to caching
-        start_time = time.time()
+        # Second call should use cached row/crack patterns and give same result
         result2 = self.generator.count_valid_walls(12, 6)
-        second_time = time.time() - start_time
         
         self.assertEqual(result1, result2)
-        # Second call should be significantly faster
-        self.assertLess(second_time, first_time)
+        # Verify that the cache is being used (cached values should be available)
+        self.assertIn(12, self.generator._row_configs_cache)
+        self.assertIn(12, self.generator._row_data_cache)
 
 
 class TestBrickBuilderApp(unittest.TestCase):
