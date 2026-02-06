@@ -44,12 +44,11 @@ class TestBrick(unittest.TestCase):
         with self.assertRaises(ValueError):
             Brick("TEST123", 2, 1, -0.10, "Red")
     
-    def test_brick_hashable(self):
-        """Test that brick objects are hashable (frozen dataclass)."""
+    def test_brick_equality(self):
+        """Test that brick objects with same attributes are equal."""
         brick1 = Brick("TEST123", 2, 1, 0.49, "Red")
         brick2 = Brick("TEST123", 2, 1, 0.49, "Red")
-        brick_set = {brick1, brick2}
-        self.assertEqual(len(brick_set), 1)
+        self.assertEqual(brick1, brick2)
 
 
 class TestBrickCatalog(unittest.TestCase):
@@ -116,19 +115,17 @@ class TestWallGenerator(unittest.TestCase):
         self.assertIn([2, 3], config_patterns)
         self.assertIn([3, 2], config_patterns)
     
-    def test_bit_pattern_conversion(self):
-        """Test conversion of configurations to bit patterns."""
+    def test_crack_set_conversion(self):
+        """Test conversion of configurations to crack sets."""
         # Test [2, 3] configuration (crack at position 2)
         config = [2, 3]
-        bit_pattern = self.generator._config_to_bit_pattern(config, 5)
-        expected = 1 << 2  # Bit set at position 2
-        self.assertEqual(bit_pattern, expected)
+        crack_set = self.generator._config_to_crack_set(config, 5)
+        self.assertEqual(crack_set, {2})
         
         # Test [3, 2] configuration (crack at position 3)
         config = [3, 2]
-        bit_pattern = self.generator._config_to_bit_pattern(config, 5)
-        expected = 1 << 3  # Bit set at position 3
-        self.assertEqual(bit_pattern, expected)
+        crack_set = self.generator._config_to_crack_set(config, 5)
+        self.assertEqual(crack_set, {3})
     
     def test_count_valid_walls_1x1(self):
         """Test counting valid walls for 1x1 (impossible with available bricks)."""

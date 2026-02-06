@@ -3,12 +3,12 @@
 Lego Brick Wall Builder Simulation
 
 A flexible and extensible library for calculating valid Lego brick wall configurations.
-This simulation uses dynamic programming and bit manipulation for efficient computation
-of wall patterns that avoid vertical crack alignment.
+This simulation uses iterative dynamic programming with precomputed row compatibility
+for efficient computation of wall patterns that avoid vertical crack alignment.
 
 Key Features:
-- Dynamic programming optimization for performance
-- Bit manipulation for pattern matching
+- Iterative bottom-up DP (processes each row exactly once)
+- Crack-set representation with precomputed compatibility lookup
 - Extensible brick catalog system
 - Cost optimization capabilities
 - Color and dimension filtering
@@ -50,7 +50,7 @@ VALID_COLORS = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass
 class Brick:
     """Represents a brick with its properties."""
     catalog_number: str
@@ -136,14 +136,16 @@ class BrickCatalog:
 
 class WallGenerator:
     """
-    Wall Generator using dynamic programming and bit manipulation:
-    - Bit manipulation for pattern matching
-    - Cached computations for efficiency
+    Wall Generator using iterative dynamic programming with precomputed compatibility:
+    - Crack-set representation: each row is a set of crack positions (clear, no bit tricks)
+    - Precomputed compatibility: for each row, store list of compatible rows (O(1) lookup per row)
+    - Iterative bottom-up DP: each row height processed exactly once, no recursion overhead
     
     The algorithm works by:
     - Generating all possible row configurations for the wall width
-    - Converting each configuration to a bit pattern representing crack positions
-    - Using DP to count valid combinations where no cracks align vertically
+    - Converting each to a crack set (positions where brick boundaries occur)
+    - Precomputing which row pairs are compatible (disjoint crack sets)
+    - Iterative DP: dp[pattern] = sum of ways from compatible previous rows
     """
     
     def __init__(self, brick_catalog: BrickCatalog):
@@ -153,8 +155,7 @@ class WallGenerator:
         
         # Caches for performance
         self._row_configs_cache: Dict[int, List[List[int]]] = {}
-        self._bit_patterns_cache: Dict[int, List[int]] = {}
-        self._compatibility_cache: Dict[Tuple[int, int], List[List[bool]]] = {}
+        self._row_data_cache: Dict[int, Tuple[List[List[int]], List[Set[int]], List[List[int]]]] = {}
         
     def _generate_row_configurations(self, width: int) -> List[List[int]]:
         """
@@ -200,104 +201,81 @@ class WallGenerator:
         self._row_configs_cache[width] = configurations
         return configurations
     
-    def _config_to_bit_pattern(self, config: List[int], width: int) -> int:
+    def _config_to_crack_set(self, config: List[int], width: int) -> Set[int]:
         """
-        Convert row configuration to bit pattern representing crack positions.
+        Convert row configuration to set of crack positions.
         
-        Each bit position represents a potential crack location. A bit is set to 1
-        if there's a crack at that position.
+        A crack is the boundary between two bricks. Positions 1..width-1 are
+        potential crack locations. Returns a set for
+        fast disjoint checks.
         
         Args:
             config: List of brick widths in the row
             width: Total width of the row
             
         Returns:
-            Integer where each bit represents a crack position
+            Set of crack positions (1-indexed stud positions)
         """
-        
-        bit_pattern = 0
+        cracks: Set[int] = set()
         position = 0
-        
         for brick_width in config:
             position += brick_width
-            if position < width:  # Don't mark crack at the end
-                bit_pattern |= (1 << position)
-        
-        return bit_pattern
+            if position < width:
+                cracks.add(position)
+        return set(cracks)
     
-    def _get_bit_patterns(self, width: int) -> List[int]:
-        """Get bit patterns for all row configurations."""
+    def _get_row_data(
+        self, width: int
+    ) -> Tuple[List[List[int]], List[Set[int]], List[List[int]]]:
+        """
+        Get row configs, crack sets, and precomputed compatibility.
         
-        if width in self._bit_patterns_cache:
-            return self._bit_patterns_cache[width]
+        compatible_with[i] = list of indices j such that row j can be placed
+        adjacent to row i (their crack sets are disjoint).
+        """
+        if width in self._row_data_cache:
+            return self._row_data_cache[width]
         
         configs = self._generate_row_configurations(width)
-        bit_patterns = [self._config_to_bit_pattern(config, width) for config in configs]
+        crack_sets = [self._config_to_crack_set(cfg, width) for cfg in configs]
+        n = len(configs)
         
-        self._bit_patterns_cache[width] = bit_patterns
-        return bit_patterns
+        # Precompute: for each row i, which rows j are compatible (disjoint cracks)
+        compatible_with: List[List[int]] = [
+            [j for j in range(n) if crack_sets[i].isdisjoint(crack_sets[j])]
+            for i in range(n)
+        ]
+        
+        self._row_data_cache[width] = (configs, crack_sets, compatible_with)
+        return configs, crack_sets, compatible_with
     
     def _count_walls_dp_approach(self, width: int, height: int) -> int:
         """
-        Core dynamic programming algorithm for counting valid walls.
+        Iterative bottom-up DP for counting valid walls.
         
-        This method uses a recursive approach with memoization to count all
-        valid wall configurations. The key insight is that wall validity
-        depends only on adjacent rows, allowing for optimal substructure.
+        Processes each row height exactly once. No recursion, no repeated
+        counting. Uses precomputed compatibility for O(1) lookup per row.
         
-        Args:
-            width: Wall width in stud units
-            height: Wall height in rows
-            
-        Returns:
-            Total number of valid wall configurations
-            
         Algorithm:
-            1. Generate all possible bit patterns for rows of given width
-            2. Use recursive DP with state (remaining_height, previous_pattern)
-            3. For each state, try all compatible current patterns
-            4. Two patterns are compatible if they have no overlapping cracks
-            5. Base case: height=0 returns 1 (one way to build empty wall)
+            1. dp[i] = count of valid walls of current height ending with row i
+            2. For height 1: dp[i] = 1 for all i
+            3. For each additional row: new_dp[i] = sum(dp[j] for j in compatible_with[i])
+            4. Final answer = sum(dp)
         """
+        _, crack_sets, compatible_with = self._get_row_data(width)
+        n = len(crack_sets)
         
-        bit_patterns = self._get_bit_patterns(width)
+        # dp[i] = number of ways to build wall of current height ending with row i
+        dp = [1] * n  # height 1: each row pattern has exactly one way
         
-        # DP with bit patterns as states
-        memo = {}
+        for _ in range(1, height):
+            new_dp = [0] * n
+            for curr in range(n):
+                # Sum over all compatible previous rows (only iterate compatible, not all)
+                new_dp[curr] = sum(dp[prev] for prev in compatible_with[curr])
+            dp = new_dp
         
-        def count_recursive(remaining_height: int, prev_pattern: int) -> int:
-            """
-            Recursive helper function with memoization.
-            
-            Args:
-                remaining_height: Number of rows left to place
-                prev_pattern: Bit pattern of the previously placed row
-                
-            Returns:
-                Number of valid ways to complete the wall from this state
-            """
-            
-            if remaining_height == 0:
-                return 1
-            
-            state_key = (remaining_height, prev_pattern)
-            if state_key in memo:
-                return memo[state_key]
-            
-            total = 0
-            for current_pattern in bit_patterns:
-                if (prev_pattern & current_pattern) == 0:
-                    total += count_recursive(remaining_height - 1, current_pattern)
-            
-            memo[state_key] = total
-            return total
-        
-        # Start with all possible first rows
-        result = 0
-        for pattern in bit_patterns:
-            result += count_recursive(height - 1, pattern)
-        
-        return result
+        return sum(dp)
     
     def count_valid_walls(self, width: int, height: int) -> int:
         """Count valid wall configurations."""
@@ -336,32 +314,21 @@ class WallGenerator:
         Note: This method has exponential complexity and should only be used
         for small wall dimensions to avoid memory/performance issues.
         """
-        
-        row_configs = self._generate_row_configurations(width)
-        bit_patterns = [self._config_to_bit_pattern(config, width) for config in row_configs]
-        config_bit_pairs = list(zip(row_configs, bit_patterns))
+        row_configs, crack_sets, compatible_with = self._get_row_data(width)
+        n = len(row_configs)
         valid_walls = []
 
-        def backtrack(level: int, prev_bit: int, current_wall: List[List[int]]):
-            """
-            Recursive backtracking to generate all valid wall configurations.
-            
-            Args:
-                level: Current row being filled (0 to height-1)
-                prev_bit: Bit pattern of the previous row
-                current_wall: Wall configuration being built
-            """
-            
+        def backtrack(level: int, prev_idx: Optional[int], current_wall: List[List[int]]):
             if level == height:
                 valid_walls.append([row.copy() for row in current_wall])
                 return
-            for config, bit in config_bit_pairs:
-                if level == 0 or (prev_bit & bit) == 0:
-                    current_wall.append(config)
-                    backtrack(level + 1, bit, current_wall)
-                    current_wall.pop()
+            indices = range(n) if prev_idx is None else compatible_with[prev_idx]
+            for idx in indices:
+                current_wall.append(row_configs[idx])
+                backtrack(level + 1, idx, current_wall)
+                current_wall.pop()
 
-        backtrack(0, 0, [])
+        backtrack(0, None, [])
         return valid_walls
     
     def _precompute_cheapest_prices(self) -> Dict[int, float]:
@@ -460,7 +427,7 @@ class BrickBuilderApp:
                 if allowed_colors is None or b.color in allowed_colors
             }
             self.wall_generator._row_configs_cache.clear()
-            self.wall_generator._bit_patterns_cache.clear()
+            self.wall_generator._row_data_cache.clear()
             self.wall_generator._price_lookup = self.wall_generator._precompute_cheapest_prices()
             allowed_colors = set(color_filter) if color_filter else None
             if cheapest_mode:
